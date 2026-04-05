@@ -232,23 +232,27 @@ EOF
     
     chmod +x "$install_dir/moner-launcher.sh"
     
-    # 尝试安装到系统路径
-    if [ -w "/usr/local/bin" ]; then
-        ln -sf "$install_dir/moner-launcher.sh" "/usr/local/bin/moner"
-        log_success "moner命令已安装到 /usr/local/bin/moner"
-    elif [ -d "$HOME/.local/bin" ]; then
-        mkdir -p "$HOME/.local/bin"
-        ln -sf "$install_dir/moner-launcher.sh" "$HOME/.local/bin/moner"
-        log_success "moner命令已安装到 ~/.local/bin/moner"
-        log_warning "请确保 ~/.local/bin 在你的PATH中"
+    # 安装moner命令
+    install_link "$install_dir/moner-launcher.sh" "moner"
+}
+
+# 检测shell类型
+detect_shell() {
+    if [ -n "$ZSH_VERSION" ]; then
+        echo "zsh"
+    elif [ -n "$BASH_VERSION" ]; then
+        echo "bash"
     else
-        log_warning "无法自动安装moner命令，请手动创建:"
-        echo "  ln -s $install_dir/moner-launcher.sh /usr/local/bin/moner"
-        echo "或运行: $install_dir/moner-launcher.sh"
+        # 默认使用当前shell
+        echo "$SHELL" | grep -o "[^/]*$"
     fi
-    
-    # 安装moner-start命令
-    install_link "$install_dir/moner-start" "moner-start"
+}
+
+# 检查目录是否在PATH中
+is_in_path() {
+    local dir="$1"
+    echo ":$PATH:" | grep -q ":$dir:"
+    return $?
 }
 
 # 安装符号链接
@@ -259,13 +263,34 @@ install_link() {
     if [ -w "/usr/local/bin" ]; then
         ln -sf "$source_file" "/usr/local/bin/$command_name"
         log_success "$command_name命令已安装到 /usr/local/bin/$command_name"
-    elif [ -d "$HOME/.local/bin" ]; then
-        mkdir -p "$HOME/.local/bin"
+    elif mkdir -p "$HOME/.local/bin" 2>/dev/null && [ -w "$HOME/.local/bin" ]; then
         ln -sf "$source_file" "$HOME/.local/bin/$command_name"
         log_success "$command_name命令已安装到 ~/.local/bin/$command_name"
+        
+        # 检查是否在PATH中
+        if ! is_in_path "$HOME/.local/bin"; then
+            log_warning "~/.local/bin 不在你的PATH中"
+            local shell_type=$(detect_shell)
+            case "$shell_type" in
+                bash)
+                    echo "  请将以下行添加到 ~/.bashrc 文件中:"
+                    echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+                    echo "  然后运行: source ~/.bashrc"
+                    ;;
+                zsh)
+                    echo "  请将以下行添加到 ~/.zshrc 文件中:"
+                    echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+                    echo "  然后运行: source ~/.zshrc"
+                    ;;
+                *)
+                    echo "  请将 ~/.local/bin 添加到你的PATH环境变量中"
+                    ;;
+            esac
+        fi
     else
         log_warning "无法自动安装$command_name命令，请手动创建:"
         echo "  ln -s $source_file /usr/local/bin/$command_name"
+        echo "或运行: $source_file"
     fi
 }
 
@@ -295,6 +320,39 @@ cd "$install_dir"
 EOF
     
     chmod +x "$install_dir/start-all" "$install_dir/start-server" "$install_dir/moner-start"
+    
+    # 安装moner-start命令
+    install_link "$install_dir/moner-start" "moner-start"
+}
+
+# 验证安装
+verify_installation() {
+    local install_dir="$1"
+    
+    log_info "验证安装..."
+    
+    # 检查moner命令是否在PATH中可用
+    if command -v moner &> /dev/null; then
+        log_success "moner命令在PATH中可用"
+    else
+        log_warning "moner命令未在PATH中找到"
+        echo "  你可以使用以下方式运行Moner:"
+        echo "    1. 直接运行: $install_dir/moner-launcher.sh"
+        echo "    2. 手动创建符号链接:"
+        echo "       sudo ln -s $install_dir/moner-launcher.sh /usr/local/bin/moner"
+        echo "    3. 将安装目录添加到PATH:"
+        echo "       export PATH=\"\$PATH:$install_dir\""
+        echo "      然后运行: moner-launcher.sh"
+    fi
+    
+    # 检查moner-start命令是否在PATH中可用
+    if command -v moner-start &> /dev/null; then
+        log_success "moner-start命令在PATH中可用"
+    else
+        log_warning "moner-start命令未在PATH中找到"
+        echo "  你可以使用以下方式启动Moner系统:"
+        echo "    cd $install_dir && ./start_all.sh"
+    fi
 }
 
 # 显示安装完成信息
@@ -307,6 +365,9 @@ show_completion() {
     echo -e "${GREEN}========================================${NC}"
     echo ""
     echo "安装目录: $install_dir"
+    echo ""
+    # 验证安装
+    verify_installation "$install_dir"
     echo ""
     echo "使用方法:"
     echo "1. 启动系统:"
