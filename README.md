@@ -45,14 +45,16 @@
 使用以下命令一键安装Moner：
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
+curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
 ```
 
 或指定安装目录：
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- /path/to/install
+curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- /path/to/install
 ```
+
+> **注意**：`-S` 参数显示错误，`-L` 参数跟随重定向。如果安装失败，请去掉 `-s` 参数以查看详细输出。
 
 安装完成后，可以直接使用 `moner` 命令：
 
@@ -92,13 +94,72 @@ pip install -r requirements.txt
 - git（用于一键安装）
 - curl（用于一键安装）
 
+## 故障排除
+
+### 安装问题
+
+#### 1. `moner` 命令未找到
+安装脚本会尝试将 `moner` 命令安装到 `/usr/local/bin` 或 `~/.local/bin`。如果命令未找到，请检查：
+
+- `~/.local/bin` 是否在你的 `PATH` 环境变量中
+  ```bash
+  echo $PATH | grep ~/.local/bin
+  ```
+  如果不在，请将其添加到 `PATH`：
+  ```bash
+  # 对于 bash
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+  source ~/.bashrc
+  
+  # 对于 zsh
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+  source ~/.zshrc
+  ```
+
+- 或者手动创建符号链接：
+  ```bash
+  sudo ln -s ~/.moner/moner-launcher.sh /usr/local/bin/moner
+  ```
+
+#### 2. 安装脚本无输出
+如果使用 `curl -sSL` 安装时没有输出，请去掉 `-s` 参数查看详细输出：
+```bash
+curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
+```
+
+#### 3. 权限不足
+如果安装到 `/usr/local/bin` 需要 `sudo` 权限，安装脚本会尝试使用 `~/.local/bin`。如果两者都不可用，请手动创建符号链接。
+
+#### 4. Python 版本问题
+需要 Python 3.8 或更高版本。使用 `python3 --version` 检查版本。
+
+### 运行问题
+
+#### 1. 启动失败
+确保所有依赖已安装：
+```bash
+cd ~/.moner
+pip install -r requirements.txt
+```
+
+#### 2. 数据库初始化失败
+删除数据库文件并重新初始化：
+```bash
+cd ~/.moner
+rm -f moner.db
+python3 -c "from database import init_db; init_db()"
+```
+
+#### 3. AI 功能无法使用
+需要有效的 AI API 密钥（OpenAI 或 Anthropic）。确保在调用 `moner ai` 时提供正确的 `--api-key` 参数。
+
 ## 快速开始
 
 ### 一键安装后快速开始
 
 ```bash
 # 1. 一键安装
-curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
+curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
 
 # 2. 启动系统
 moner-start  # 或: cd ~/.moner && ./start_all.sh
