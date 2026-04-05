@@ -246,6 +246,27 @@ EOF
         echo "  ln -s $install_dir/moner-launcher.sh /usr/local/bin/moner"
         echo "或运行: $install_dir/moner-launcher.sh"
     fi
+    
+    # 安装moner-start命令
+    install_link "$install_dir/moner-start" "moner-start"
+}
+
+# 安装符号链接
+install_link() {
+    local source_file="$1"
+    local command_name="$2"
+    
+    if [ -w "/usr/local/bin" ]; then
+        ln -sf "$source_file" "/usr/local/bin/$command_name"
+        log_success "$command_name命令已安装到 /usr/local/bin/$command_name"
+    elif [ -d "$HOME/.local/bin" ]; then
+        mkdir -p "$HOME/.local/bin"
+        ln -sf "$source_file" "$HOME/.local/bin/$command_name"
+        log_success "$command_name命令已安装到 ~/.local/bin/$command_name"
+    else
+        log_warning "无法自动安装$command_name命令，请手动创建:"
+        echo "  ln -s $source_file /usr/local/bin/$command_name"
+    fi
 }
 
 # 创建服务启动脚本
@@ -266,7 +287,14 @@ cd "$install_dir"
 ./start.sh
 EOF
     
-    chmod +x "$install_dir/start-all" "$install_dir/start-server"
+    # 创建moner-start脚本
+    cat > "$install_dir/moner-start" << EOF
+#!/bin/bash
+cd "$install_dir"
+./start_all.sh
+EOF
+    
+    chmod +x "$install_dir/start-all" "$install_dir/start-server" "$install_dir/moner-start"
 }
 
 # 显示安装完成信息
@@ -284,6 +312,9 @@ show_completion() {
     echo "1. 启动系统:"
     echo "   cd $install_dir && ./start_all.sh"
     echo "   或使用: $install_dir/start-all"
+    if [ -f "/usr/local/bin/moner-start" ] || [ -f "$HOME/.local/bin/moner-start" ]; then
+        echo "   或使用: moner-start"
+    fi
     echo ""
     echo "2. 使用CLI命令:"
     if [ -f "/usr/local/bin/moner" ] || [ -f "$HOME/.local/bin/moner" ]; then

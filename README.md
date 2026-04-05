@@ -94,7 +94,33 @@ pip install -r requirements.txt
 
 ## 快速开始
 
-### 1. 启动服务器
+### 一键安装后快速开始
+
+```bash
+# 1. 一键安装
+curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
+
+# 2. 启动系统
+moner-start  # 或: cd ~/.moner && ./start_all.sh
+
+# 3. 在另一个终端中，注册用户
+moner register --username test --password test
+
+# 4. 登录
+moner login --username test --password test
+
+# 5. 使用AI功能（需要API密钥）
+moner ai "解释一下人工智能" --provider openai --api-key YOUR_API_KEY
+
+# 6. 执行其他命令
+moner bash "ls -la"
+moner webfetch "https://example.com"
+moner status
+```
+
+### 传统启动方式（手动安装）
+
+#### 1. 启动服务器
 
 ```bash
 # 激活虚拟环境后
@@ -103,10 +129,16 @@ python -m server.main
 
 服务器将在 `ws://localhost:8765` 启动。
 
-### 2. 使用CLI客户端
+#### 2. 启动完整系统（WebSocket + REST API）
 
 ```bash
-# 在另一个终端中，激活虚拟环境后
+./start_all.sh
+```
+
+#### 3. 使用CLI客户端
+
+```bash
+# 在另一个终端中
 
 # 显示帮助
 python -m cli.main --help
