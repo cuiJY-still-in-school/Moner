@@ -40,7 +40,36 @@
 
 ## 安装
 
-### 使用虚拟环境（推荐）
+### 一键安装（推荐）
+
+使用以下命令一键安装Moner：
+
+```bash
+curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
+```
+
+或指定安装目录：
+
+```bash
+curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- /path/to/install
+```
+
+安装完成后，可以直接使用 `moner` 命令：
+
+```bash
+# 查看帮助
+moner --help
+
+# 注册用户
+moner register --username test --password test
+
+# 使用AI功能
+moner ai "解释一下人工智能" --provider openai --api-key YOUR_API_KEY
+```
+
+### 手动安装
+
+#### 使用虚拟环境（推荐）
 
 ```bash
 # 克隆或进入项目目录
@@ -56,10 +85,12 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 系统依赖
+#### 系统依赖
 
 - Python 3.8+
 - SQLite（默认）或 PostgreSQL
+- git（用于一键安装）
+- curl（用于一键安装）
 
 ## 快速开始
 
