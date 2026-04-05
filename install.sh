@@ -5,6 +5,46 @@
 
 set -e  # 出错时停止
 
+# 显示帮助信息
+show_help() {
+    cat << EOF
+Moner 一键安装脚本
+
+使用方法:
+  curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
+  curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- [安装目录]
+
+参数:
+  安装目录    可选，默认为 ~/.moner
+
+示例:
+  # 使用默认安装目录
+  curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
+  
+  # 指定安装目录
+  curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- /opt/moner
+  
+  # 本地运行（已下载脚本）
+  ./install.sh ~/my-moner
+
+功能:
+  - 自动检测和安装系统依赖
+  - 下载最新版Moner
+  - 创建Python虚拟环境
+  - 安装Python依赖
+  - 生成配置文件
+  - 创建moner命令别名
+
+Moner是一个CLI非冷启动AI系统，支持动态AI调用、WebSocket通信和工具执行。
+EOF
+    exit 0
+}
+
+# 检查是否请求帮助
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_help
+fi
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
