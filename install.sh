@@ -214,6 +214,33 @@ download_moner() {
     log_success "Moner已下载到 $install_dir"
 }
 
+# 获取平台信息（与bundle-deps.sh保持一致）
+get_platform_info() {
+    local python_version_full=$(python3 -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" 2>/dev/null || echo "unknown")
+    local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
+    
+    # 获取平台信息
+    local platform=""
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # 尝试获取具体的Linux发行版
+        if [[ -f /etc/os-release ]]; then
+            source /etc/os-release
+            platform="${ID}-${VERSION_ID}"
+        else
+            platform="linux-unknown"
+        fi
+        # 添加架构信息
+        local arch=$(uname -m)
+        platform="${platform}-${arch}"
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        platform="macos-$(uname -m)"
+    else
+        platform="unknown"
+    fi
+    
+    echo "${platform}-python${python_version}"
+}
+
 # 设置Python虚拟环境
 setup_venv() {
     local install_dir="$1"
@@ -223,6 +250,11 @@ setup_venv() {
         log_info "虚拟环境已存在，跳过创建"
         return 0
     fi
+    
+    # 在创建虚拟环境前获取平台信息
+    log_info "检测系统平台..."
+    local platform_id=$(get_platform_info)
+    log_info "检测到平台: $platform_id"
     
     log_info "创建Python虚拟环境..."
     python3 -m venv venv
@@ -236,36 +268,88 @@ setup_venv() {
     # 安装依赖
     log_info "安装Python依赖..."
     
-    # 获取Python版本
+    # 检查是否有预打包的依赖
+    local deps_dir="deps/$platform_id"
+    log_info "检查预打包依赖目录: $deps_dir"
+    
+    # 获取Python版本（用于决定安装策略）
     local python_version_full=$(python3 -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" 2>/dev/null || echo "unknown")
     local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
     
     log_info "Python版本: $python_version_full ($python_version)"
     
-    # 检查是否需要特殊处理pydantic-core
-    local install_cmd="pip install -r requirements.txt"
-    
-    if [[ "$python_version" == "3.13" ]]; then
-        log_warning "检测到Python 3.13，pydantic-core可能需要特殊处理..."
-        log_info "尝试使用pydantic-core的预编译wheel..."
+    if [ -d "$deps_dir" ] && [ -n "$(ls -A "$deps_dir"/*.whl "$deps_dir"/*.tar.gz "$deps_dir"/*.zip 2>/dev/null)" ]; then
+        log_success "找到预打包的依赖目录: $deps_dir"
+        log_info "使用本地依赖包安装..."
         
-        # 首先尝试正常安装
-        if pip install -r requirements.txt; then
-            log_success "依赖安装成功"
-        else
-            log_warning "标准安装失败，尝试使用--no-binary选项..."
-            # 创建临时requirements文件，为pydantic-core添加--no-binary选项
+        # 对于Python 3.13，需要特殊处理pydantic-core
+        if [[ "$python_version" == "3.13" ]]; then
+            log_warning "Python 3.13检测到，为pydantic-core使用--no-binary选项..."
+            # 创建临时requirements文件
             local tmp_req_file=$(mktemp)
             cp requirements.txt "$tmp_req_file"
             
-            # 尝试使用--no-binary选项
-            if pip install --no-binary pydantic-core -r "$tmp_req_file"; then
-                log_success "使用--no-binary pydantic-core安装成功"
+            # 使用--no-binary pydantic-core选项
+            if pip install --no-index --find-links "$deps_dir" --no-binary pydantic-core -r "$tmp_req_file"; then
+                log_success "使用预打包依赖和--no-binary pydantic-core安装成功"
+                rm -f "$tmp_req_file"
+                deactivate
+                return 0
             else
-                log_warning "--no-binary安装失败，尝试安装pydantic 2.6.0+..."
-                # 尝试安装较新版本的pydantic
-                local newer_requirements="requirements_py313.txt"
-                cat > "$install_dir/$newer_requirements" << EOF
+                log_warning "本地依赖包安装失败，尝试在线安装..."
+                rm -f "$tmp_req_file"
+            fi
+        else
+            # 正常安装（非Python 3.13）
+            if pip install --no-index --find-links "$deps_dir" -r requirements.txt; then
+                log_success "使用预打包依赖安装成功"
+                deactivate
+                return 0
+            else
+                log_warning "本地依赖包安装失败，尝试在线安装..."
+            fi
+        fi
+    else
+        log_info "未找到预打包依赖 ($deps_dir)，将在线安装"
+    fi
+    
+    # 获取Python版本
+    local python_version_full=$(python3 -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" 2>/dev/null || echo "unknown")
+    local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
+    
+    # 在线安装依赖（本地依赖不可用或安装失败时执行）
+    log_info "开始在线安装依赖..."
+    
+    # 对于Python 3.13的特殊处理
+    if [[ "$python_version" == "3.13" ]]; then
+        log_warning "Python 3.13检测到，尝试多种安装方法解决pydantic-core问题..."
+        
+        # 方法1: 尝试正常安装
+        log_info "尝试方法1: 标准安装..."
+        if pip install -r requirements.txt; then
+            log_success "标准安装成功"
+            deactivate
+            log_success "虚拟环境设置完成"
+            return 0
+        fi
+        
+        # 方法2: 使用--no-binary pydantic-core
+        log_info "方法1失败，尝试方法2: 使用--no-binary pydantic-core..."
+        local tmp_req_file=$(mktemp)
+        cp requirements.txt "$tmp_req_file"
+        
+        if pip install --no-binary pydantic-core -r "$tmp_req_file"; then
+            log_success "使用--no-binary pydantic-core安装成功"
+            rm -f "$tmp_req_file"
+            deactivate
+            log_success "虚拟环境设置完成"
+            return 0
+        fi
+        
+        # 方法3: 使用pydantic>=2.6.0
+        log_info "方法2失败，尝试方法3: 使用pydantic>=2.6.0..."
+        local newer_requirements="requirements_py313.txt"
+        cat > "$install_dir/$newer_requirements" << EOF
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 websockets==12.0
@@ -286,45 +370,52 @@ openai>=1.0.0
 anthropic>=0.25.0
 tiktoken>=0.5.0
 EOF
-                if pip install -r "$install_dir/$newer_requirements"; then
-                    log_success "使用pydantic>=2.6.0安装成功"
-                else
-                    log_error "所有安装方法都失败了"
-                    rm -f "$tmp_req_file" "$install_dir/$newer_requirements" 2>/dev/null
-                    return 1
-                fi
-                rm -f "$tmp_req_file" "$install_dir/$newer_requirements" 2>/dev/null
-            fi
-            rm -f "$tmp_req_file" 2>/dev/null
+        
+        if pip install -r "$install_dir/$newer_requirements"; then
+            log_success "使用pydantic>=2.6.0安装成功"
+            rm -f "$tmp_req_file" "$install_dir/$newer_requirements" 2>/dev/null
+            deactivate
+            log_success "虚拟环境设置完成"
+            return 0
+        else
+            log_error "所有在线安装方法都失败了"
+            echo ""
+            echo "可能的原因和解决方案:"
+            echo "  1. 网络问题 - 请检查网络连接"
+            echo "  2. Python 3.13兼容性问题 - pydantic-core需要编译，但缺少编译工具"
+            echo "  3. 缺少系统依赖 - 可能需要安装 build-essential, python3-dev 等"
+            echo ""
+            echo "可以尝试:"
+            echo "  a) 安装编译工具:"
+            echo "     sudo apt-get install build-essential python3-dev"
+            echo "  b) 使用 --skip-deps 选项重新安装，然后手动安装依赖"
+            echo "  c) 使用系统Python 3.12或更低版本"
+            echo ""
+            rm -f "$tmp_req_file" "$install_dir/$newer_requirements" 2>/dev/null
+            return 1
         fi
     else
-        # Python 3.12或更低版本，正常安装
-        if ! pip install -r requirements.txt; then
-            log_error "依赖安装失败，这可能是因为:"
+        # Python 3.12或更低版本，正常在线安装
+        log_info "Python $python_version 检测到，正常在线安装..."
+        if pip install -r requirements.txt; then
+            log_success "在线安装成功"
+            deactivate
+            log_success "虚拟环境设置完成"
+            return 0
+        else
+            log_error "在线安装失败"
             echo ""
+            echo "可能的原因:"
             echo "  1. 网络问题 - 请检查网络连接"
             echo "  2. Python版本不兼容 - 需要 Python 3.8-3.12"
-            echo "  3. 缺少编译工具 - 可能需要安装 build-essential 或类似工具"
+            echo "  3. 缺少编译工具"
             echo ""
-            echo "可以尝试以下解决方案:"
-            echo "  a) 使用 --skip-deps 跳过依赖安装，然后手动安装:"
-            echo "     cd $install_dir && source venv/bin/activate && pip install -r requirements.txt"
-            echo "  b) 升级 pip: pip install --upgrade pip setuptools wheel"
-            echo "  c) 安装系统编译工具:"
-            echo "     Debian/Ubuntu: sudo apt-get install build-essential python3-dev"
-            echo "     RHEL/CentOS: sudo yum install gcc python3-devel"
-            echo "     macOS: xcode-select --install"
-            echo ""
-            echo "如果特定包（如 pydantic-core）构建失败，可以尝试:"
-            echo "  pip install --no-binary pydantic-core pydantic-core"
+            echo "解决方案:"
+            echo "  使用 --skip-deps 选项重新安装，然后手动安装依赖"
             echo ""
             return 1
         fi
-        log_success "依赖安装成功"
     fi
-    
-    deactivate
-    log_success "虚拟环境设置完成"
 }
 
 # 创建配置文件
