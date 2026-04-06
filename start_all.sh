@@ -20,7 +20,72 @@ fi
 
 # 检查依赖
 echo "检查Python依赖..."
-pip install -r requirements.txt
+
+# 获取Python版本
+python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
+python_version_full=$(python3 -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" 2>/dev/null || echo "unknown")
+
+echo "Python版本: $python_version_full ($python_version)"
+
+# 检查Python 3.13兼容性问题
+if [[ "$python_version" == "3.13" ]]; then
+    echo "检测到Python 3.13，检查pydantic和SQLAlchemy兼容性..."
+    
+    # 检查已安装的包版本
+    pydantic_version=$(python3 -c "import pydantic; print(pydantic.__version__)" 2>/dev/null || echo "not installed")
+    sqlalchemy_version=$(python3 -c "import sqlalchemy; print(sqlalchemy.__version__)" 2>/dev/null || echo "not installed")
+    
+    echo "当前pydantic版本: $pydantic_version"
+    echo "当前SQLAlchemy版本: $sqlalchemy_version"
+    
+    # 检查是否需要更新
+    need_update=0
+    if [[ "$pydantic_version" == "not installed" ]] || [[ "$pydantic_version" < "2.6.0" ]]; then
+        echo "需要更新pydantic到>=2.6.0..."
+        need_update=1
+    fi
+    
+    if [[ "$sqlalchemy_version" == "not installed" ]] || [[ "$sqlalchemy_version" < "2.0.26" ]]; then
+        echo "需要更新SQLAlchemy到>=2.0.26..."
+        need_update=1
+    fi
+    
+    if [[ $need_update -eq 1 ]]; then
+        echo "创建兼容性requirements文件..."
+        cat > requirements_py313_fix.txt << EOF
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+sqlalchemy>=2.0.26
+alembic==1.12.1
+pydantic>=2.6.0
+pydantic-settings==2.1.0
+pyjwt[crypto]==2.8.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+click==8.1.7
+typer==0.9.0
+rich==13.7.0
+requests==2.31.0
+aiohttp==3.9.1
+aiosqlite==0.19.0
+openai>=1.0.0
+anthropic>=0.25.0
+tiktoken>=0.5.0
+EOF
+        
+        echo "更新Python包以兼容Python 3.13..."
+        pip install -r requirements_py313_fix.txt
+        rm -f requirements_py313_fix.txt
+        echo "包更新完成"
+    else
+        echo "包版本已兼容Python 3.13"
+        pip install -r requirements.txt
+    fi
+else
+    # Python 3.12或更低版本，正常安装
+    pip install -r requirements.txt
+fi
 
 # 初始化数据库
 echo "初始化数据库..."

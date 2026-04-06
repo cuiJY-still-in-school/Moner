@@ -285,23 +285,23 @@ setup_venv() {
         
         # 对于Python 3.13，需要特殊处理pydantic-core
         if [[ "$python_version" == "3.13" ]]; then
-            log_warning "Python 3.13检测到，需要pydantic>=2.6.0以解决兼容性问题..."
-            # 创建临时requirements文件，将pydantic==2.5.0替换为pydantic>=2.6.0
+            log_warning "Python 3.13检测到，需要pydantic>=2.6.0和sqlalchemy>=2.0.26以解决兼容性问题..."
+            # 创建临时requirements文件，将pydantic==2.5.0替换为pydantic>=2.6.0，sqlalchemy==2.0.23替换为sqlalchemy>=2.0.26
             local tmp_req_file=$(mktemp)
-            # 复制并替换pydantic版本
-            sed 's/pydantic==2.5.0/pydantic>=2.6.0/' requirements.txt > "$tmp_req_file"
+            # 复制并替换pydantic和sqlalchemy版本
+            sed -e 's/pydantic==2.5.0/pydantic>=2.6.0/' -e 's/sqlalchemy==2.0.23/sqlalchemy>=2.0.26/' requirements.txt > "$tmp_req_file"
             
             log_info "修改后的requirements文件内容:"
-            grep pydantic "$tmp_req_file"
+            grep -E "(pydantic|sqlalchemy)" "$tmp_req_file"
             
             # 使用--find-links优先使用本地包，允许回退到PyPI（不使用--no-index）
             if pip install --find-links "$deps_dir" -r "$tmp_req_file"; then
-                log_success "使用预打包依赖和pydantic>=2.6.0安装成功"
+                log_success "使用预打包依赖、pydantic>=2.6.0和sqlalchemy>=2.0.26安装成功"
                 rm -f "$tmp_req_file"
                 deactivate
                 return 0
             else
-                log_warning "使用pydantic>=2.6.0安装失败，尝试其他方法..."
+                log_warning "使用pydantic>=2.6.0和sqlalchemy>=2.0.26安装失败，尝试其他方法..."
                 rm -f "$tmp_req_file"
             fi
         else
@@ -327,7 +327,7 @@ setup_venv() {
     
     # 对于Python 3.13的特殊处理
     if [[ "$python_version" == "3.13" ]]; then
-        log_warning "Python 3.13检测到，尝试多种安装方法解决pydantic-core问题..."
+        log_warning "Python 3.13检测到，尝试多种安装方法解决pydantic-core和SQLAlchemy兼容性问题..."
         
         # 方法1: 尝试正常安装
         log_info "尝试方法1: 标准安装..."
@@ -352,13 +352,13 @@ setup_venv() {
         fi
         
         # 方法3: 使用pydantic>=2.6.0
-        log_info "方法2失败，尝试方法3: 使用pydantic>=2.6.0..."
+        log_info "方法2失败，尝试方法3: 使用pydantic>=2.6.0和sqlalchemy>=2.0.26..."
         local newer_requirements="requirements_py313.txt"
         cat > "$install_dir/$newer_requirements" << EOF
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 websockets==12.0
-sqlalchemy==2.0.23
+sqlalchemy>=2.0.26
 alembic==1.12.1
 pydantic>=2.6.0
 pydantic-settings==2.1.0
@@ -377,7 +377,7 @@ tiktoken>=0.5.0
 EOF
         
         if pip install -r "$install_dir/$newer_requirements"; then
-            log_success "使用pydantic>=2.6.0安装成功"
+            log_success "使用pydantic>=2.6.0和sqlalchemy>=2.0.26安装成功"
             rm -f "$tmp_req_file" "$install_dir/$newer_requirements" 2>/dev/null
             deactivate
             log_success "虚拟环境设置完成"
@@ -387,7 +387,7 @@ EOF
             echo ""
             echo "可能的原因和解决方案:"
             echo "  1. 网络问题 - 请检查网络连接"
-            echo "  2. Python 3.13兼容性问题 - pydantic-core需要编译，但缺少编译工具"
+            echo "  2. Python 3.13兼容性问题 - pydantic-core需要编译，SQLAlchemy 2.0.23有兼容性问题"
             echo "  3. 缺少系统依赖 - 可能需要安装 build-essential, python3-dev 等"
             echo ""
             echo "可以尝试:"
