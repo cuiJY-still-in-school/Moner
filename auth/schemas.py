@@ -1,11 +1,11 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
-class UserType(str, Enum):
-    HUMAN = "human"
-    AGENT = "agent"
+class UserType(StrEnum):
+    HUMAN = "HUMAN"
+    AGENT = "AGENT"
 
 class UserBase(BaseModel):
     username: str

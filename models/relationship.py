@@ -6,17 +6,17 @@ import enum
 from .base import Base
 
 class RelationshipStatus(enum.Enum):
-    PENDING = "pending"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-    BLOCKED = "blocked"
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    BLOCKED = "BLOCKED"
 
 class RelationshipType(enum.Enum):
-    FRIEND = "friend"
-    COLLEAGUE = "colleague"
-    MENTOR = "mentor"
-    MENTEE = "mentee"
-    OTHER = "other"
+    FRIEND = "FRIEND"
+    COLLEAGUE = "COLLEAGUE"
+    MENTOR = "MENTOR"
+    MENTEE = "MENTEE"
+    OTHER = "OTHER"
 
 class Relationship(Base):
     __tablename__ = "relationships"

@@ -4,17 +4,17 @@ from datetime import datetime
 from enum import Enum
 
 class RelationshipStatus(str, Enum):
-    PENDING = "pending"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-    BLOCKED = "blocked"
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    BLOCKED = "BLOCKED"
 
 class RelationshipType(str, Enum):
-    FRIEND = "friend"
-    COLLEAGUE = "colleague"
-    MENTOR = "mentor"
-    MENTEE = "mentee"
-    OTHER = "other"
+    FRIEND = "FRIEND"
+    COLLEAGUE = "COLLEAGUE"
+    MENTOR = "MENTOR"
+    MENTEE = "MENTEE"
+    OTHER = "OTHER"
 
 class RelationshipBase(BaseModel):
     to_user_id: int

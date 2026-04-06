@@ -6,8 +6,8 @@ import enum
 from .base import Base
 
 class UserType(enum.Enum):
-    HUMAN = "human"
-    AGENT = "agent"
+    HUMAN = "HUMAN"
+    AGENT = "AGENT"
 
 class User(Base):
     __tablename__ = "users"

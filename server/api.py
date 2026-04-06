@@ -33,10 +33,18 @@ from goals.crud import (
 from goals.schemas import GoalCreate, GoalInDB, GoalUpdate, GoalStatus
 from models.user import User
 
-# 导入AI API路由器
-from server.ai_api import router as ai_router
+# 导入AI API路由器（可选）
+try:
+    from server.ai_api import router as ai_router
+    ai_router_available = True
+except ImportError as e:
+    logger.warning(f"AI API不可用: {e}")
+    # 创建空路由器作为占位符
+    from fastapi import APIRouter
+    ai_router = APIRouter()
+    ai_router_available = False
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # 初始化数据库
@@ -88,8 +96,11 @@ async def get_current_user_api(
         raise credentials_exception
     return user
 
-# 包含AI API路由
-app.include_router(ai_router)
+# 包含AI API路由（如果可用）
+if ai_router_available:
+    app.include_router(ai_router)
+else:
+    logger.info("AI API路由未启用")
 
 # API路由
 @app.get("/api/health")
@@ -216,7 +227,9 @@ async def execute_tool(
     
     # 执行工具
     try:
+        logger.info(f"执行工具: {tool_name}, 参数: {params}, 用户: {current_user.id}")
         result: ToolResult = await tool_manager.execute_tool(tool_name, **params)
+        logger.info(f"工具执行结果: success={result.success}, error={result.error}")
         
         # 记录工具执行（简化）
         # TODO: 保存到数据库
@@ -230,6 +243,7 @@ async def execute_tool(
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
+        logger.error(f"工具执行异常: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Tool execution failed: {str(e)}"

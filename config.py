@@ -1,5 +1,7 @@
 import os
-from typing import Optional
+import json
+from typing import Optional, List
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -18,13 +20,13 @@ class Settings(BaseSettings):
     # JWT
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24小时
     
     # 工具安全限制
-    allowed_bash_paths: list[str] = os.getenv("ALLOWED_BASH_PATHS", "/home/jayson2013/moner,/tmp").split(",")
-    max_bash_timeout: int = int(os.getenv("MAX_BASH_TIMEOUT", "30"))
-    allowed_read_paths: list[str] = os.getenv("ALLOWED_READ_PATHS", "/home/jayson2013/moner").split(",")
-    allowed_edit_paths: list[str] = os.getenv("ALLOWED_EDIT_PATHS", "/home/jayson2013/moner").split(",")
+    allowed_bash_paths: str = "/home/jayson2013/moner,/tmp"
+    max_bash_timeout: int = 30
+    allowed_read_paths: str = "/home/jayson2013/moner"
+    allowed_edit_paths: str = "/home/jayson2013/moner"
     
     # AI配置
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY", None)

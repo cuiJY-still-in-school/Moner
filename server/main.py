@@ -28,6 +28,7 @@ init_db()
 class MessageType:
     REGISTER = "register"
     LOGIN = "login"
+    AUTH_TOKEN = "auth_token"
     TOOL_REQUEST = "tool_request"
     TOOL_RESPONSE = "tool_response"
     REPORT = "report"
@@ -45,14 +46,32 @@ async def handle_message(websocket: WebSocketServerProtocol, connection_id: str,
     msg_type = message.get("type")
     data = message.get("data", {})
     
+    logger.info(f"收到消息: type={msg_type}, data keys={list(data.keys())}")
+    
     # 需要数据库会话
     db = next(get_db())
     
-    # 检查用户是否已认证（除了注册和登录）
+    # 检查用户是否已认证（除了注册、登录、认证token和ping）
     user_id = None
-    if msg_type not in [MessageType.REGISTER, MessageType.LOGIN, MessageType.PING]:
+    if msg_type not in [MessageType.REGISTER, MessageType.LOGIN, MessageType.AUTH_TOKEN, MessageType.PING]:
         user_id = connection_manager.get_connection_user(connection_id)
+        
+        # 如果连接未认证，但消息包含token，尝试通过token认证
+        if not user_id and msg_type == MessageType.TOOL_REQUEST:
+            token = data.get("token")
+            if token:
+                try:
+                    user = get_current_user(token, db)
+                    if user:
+                        user_id = user.id
+                        # 注册连接到用户
+                        connection_manager.register_user(connection_id, user_id)
+                        logger.info(f"通过token认证用户: {user_id}")
+                except Exception as e:
+                    logger.error(f"token认证失败: {e}")
+        
         if not user_id:
+            logger.warning(f"连接 {connection_id} 未认证，消息类型: {msg_type}")
             await send_error(websocket, "未认证，请先登录")
             return
     
@@ -72,6 +91,8 @@ async def handle_message(websocket: WebSocketServerProtocol, connection_id: str,
         await handle_goal_create(db, websocket, user_id, data)
     elif msg_type == MessageType.GOAL_UPDATE:
         await handle_goal_update(db, websocket, user_id, data)
+    elif msg_type == MessageType.AUTH_TOKEN:
+        await handle_auth_token(db, websocket, connection_id, data)
     elif msg_type == MessageType.PING:
         await send_message(websocket, MessageType.PONG, {"message": "pong"})
     else:
@@ -158,10 +179,46 @@ async def handle_login(db: Session, websocket: WebSocketServerProtocol, connecti
         logger.error(f"登录错误: {e}")
         await send_error(websocket, f"登录失败: {str(e)}")
 
+async def handle_auth_token(db: Session, websocket: WebSocketServerProtocol, connection_id: str, data: dict):
+    """使用token认证"""
+    try:
+        token = data.get("token")
+        if not token:
+            await send_error(websocket, "缺少token")
+            return
+        
+        user = get_current_user(token, db)
+        if not user:
+            await send_error(websocket, "无效token")
+            return
+        
+        if not user.is_active:
+            await send_error(websocket, "用户已被禁用")
+            return
+        
+        # 注册连接到用户
+        connection_manager.register_user(connection_id, user.id)
+        
+        await send_message(websocket, MessageType.LOGIN, {
+            "access_token": token,  # 返回相同token
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "user_type": user.user_type.value,
+                "display_name": user.display_name
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"token认证错误: {e}")
+        await send_error(websocket, f"认证失败: {str(e)}")
+
 async def handle_tool_request(db: Session, websocket: WebSocketServerProtocol, user_id: int, data: dict):
     """处理工具请求"""
     tool_name = data.get("tool")
     params = data.get("params", {})
+    
+    logger.info(f"处理工具请求: user_id={user_id}, tool={tool_name}, params={params}")
     
     if not tool_name:
         await send_error(websocket, "缺少工具名称")
@@ -169,6 +226,8 @@ async def handle_tool_request(db: Session, websocket: WebSocketServerProtocol, u
     
     # 执行工具
     result = await tool_manager.execute_tool(tool_name, **params)
+    
+    logger.info(f"工具执行结果: success={result.success}, error={result.error}")
     
     # 记录工具执行（简化）
     # TODO: 保存到数据库
@@ -289,13 +348,14 @@ async def send_error(websocket: WebSocketServerProtocol, error_msg: str):
     """发送错误消息"""
     await send_message(websocket, MessageType.ERROR, {"error": error_msg})
 
-async def connection_handler(websocket: WebSocketServerProtocol, path: str):
+async def connection_handler(websocket):
     """处理WebSocket连接"""
     connection_id = str(id(websocket))
     await connection_manager.connect(websocket, connection_id)
     
     try:
         async for message in websocket:
+            logger.info(f"收到原始消息: {message[:100]}...")
             try:
                 data = json.loads(message)
                 await handle_message(websocket, connection_id, data)
@@ -304,8 +364,10 @@ async def connection_handler(websocket: WebSocketServerProtocol, path: str):
             except Exception as e:
                 logger.error(f"处理消息错误: {e}")
                 await send_error(websocket, f"内部服务器错误: {str(e)}")
-    except websockets.exceptions.ConnectionClosed:
-        logger.info(f"连接关闭: {connection_id}")
+    except websockets.exceptions.ConnectionClosed as e:
+        logger.info(f"连接关闭: {connection_id}, 原因: {e}")
+    except Exception as e:
+        logger.error(f"连接处理错误: {e}")
     finally:
         connection_manager.disconnect(connection_id)
 
@@ -321,4 +383,9 @@ async def main():
     await server.wait_closed()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.error(f"服务器错误: {e}")
+        import traceback
+        traceback.print_exc()
