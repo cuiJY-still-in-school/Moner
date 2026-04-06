@@ -231,7 +231,27 @@ setup_venv() {
     
     # 安装依赖
     log_info "安装Python依赖..."
-    pip install -r requirements.txt
+    if ! pip install -r requirements.txt; then
+        log_error "依赖安装失败，这可能是因为:"
+        echo ""
+        echo "  1. 网络问题 - 请检查网络连接"
+        echo "  2. Python版本不兼容 - 需要 Python 3.8-3.12"
+        echo "  3. 缺少编译工具 - 可能需要安装 build-essential 或类似工具"
+        echo ""
+        echo "可以尝试以下解决方案:"
+        echo "  a) 使用 --skip-deps 跳过依赖安装，然后手动安装:"
+        echo "     cd $install_dir && source venv/bin/activate && pip install -r requirements.txt"
+        echo "  b) 升级 pip: pip install --upgrade pip setuptools wheel"
+        echo "  c) 安装系统编译工具:"
+        echo "     Debian/Ubuntu: sudo apt-get install build-essential python3-dev"
+        echo "     RHEL/CentOS: sudo yum install gcc python3-devel"
+        echo "     macOS: xcode-select --install"
+        echo ""
+        echo "如果特定包（如 pydantic-core）构建失败，可以尝试:"
+        echo "  pip install --no-binary pydantic-core pydantic-core"
+        echo ""
+        return 1
+    fi
     
     deactivate
     log_success "虚拟环境设置完成"
