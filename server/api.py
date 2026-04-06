@@ -2,6 +2,7 @@
 REST API for Moner system
 """
 import logging
+import time
 from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -20,7 +21,7 @@ from tools.base import ToolResult
 from relationships.crud import (
     create_relationship, get_relationship, get_relationships_by_user, 
     update_relationship_status, delete_relationship, get_pending_requests_to_user,
-    create_report, get_report, get_reports_by_user, update_report_status, delete_report
+    create_report, get_report, get_reports_by_user, update_report_status, update_report, delete_report
 )
 from relationships.schemas import (
     RelationshipCreate, RelationshipInDB, RelationshipUpdate, 
@@ -32,6 +33,7 @@ from goals.crud import (
 )
 from goals.schemas import GoalCreate, GoalInDB, GoalUpdate, GoalStatus
 from models.user import User
+from models.tool_execution import ToolExecution
 
 # 导入AI API路由器（可选）
 try:
@@ -214,6 +216,7 @@ async def update_user_by_id(
 async def execute_tool(
     tool_name: str,
     params: dict,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_api)
 ):
     """执行工具"""
@@ -226,13 +229,42 @@ async def execute_tool(
         )
     
     # 执行工具
+    start_time = time.time()
     try:
         logger.info(f"执行工具: {tool_name}, 参数: {params}, 用户: {current_user.id}")
         result: ToolResult = await tool_manager.execute_tool(tool_name, **params)
+        duration_ms = int((time.time() - start_time) * 1000)
         logger.info(f"工具执行结果: success={result.success}, error={result.error}")
         
-        # 记录工具执行（简化）
-        # TODO: 保存到数据库
+        # 保存工具执行记录到数据库
+        try:
+            # 构建命令字符串
+            command_str = str(params)
+            # 对于特定工具，提取关键信息
+            if tool_name == "bash" and "command" in params:
+                command_str = params["command"]
+            elif tool_name == "read" and "file_path" in params:
+                command_str = f"read: {params['file_path']}"
+            elif tool_name == "webfetch" and "url" in params:
+                command_str = f"fetch: {params['url']}"
+            elif tool_name == "edit" and "file_path" in params:
+                command_str = f"edit: {params['file_path']}"
+            
+            # 创建工具执行记录
+            tool_exec = ToolExecution(
+                user_id=current_user.id,
+                tool_name=tool_name,
+                command=command_str,
+                output=str(result.output) if result.output else None,
+                exit_code=0 if result.success else 1,
+                duration_ms=duration_ms
+            )
+            db.add(tool_exec)
+            db.commit()
+            logger.info(f"工具执行记录已保存: id={tool_exec.id}")
+        except Exception as db_error:
+            logger.error(f"保存工具执行记录失败: {db_error}", exc_info=True)
+            # 不中断主要流程，仅记录错误
         
         return {
             "success": result.success,
@@ -243,6 +275,7 @@ async def execute_tool(
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
         logger.error(f"工具执行异常: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -366,7 +399,7 @@ async def update_report(
     current_user: User = Depends(get_current_user_api),
     db: Session = Depends(get_db)
 ):
-    """更新汇报状态（标记为已读等）"""
+    """更新汇报（发送者可更新标题和内容，接收者可更新状态）"""
     report = get_report(db, report_id)
     if not report:
         raise HTTPException(
@@ -374,23 +407,32 @@ async def update_report(
             detail="Report not found"
         )
     
-    # 检查权限：只能是接收方才能更新状态
-    if report.to_user_id != current_user.id:
+    # 检查权限：发送者或接收者
+    is_sender = report.from_user_id == current_user.id
+    is_receiver = report.to_user_id == current_user.id
+    
+    if not (is_sender or is_receiver):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this report"
         )
     
-    # 更新汇报
-    if report_update.status:
-        updated = update_report_status(db, report_id, report_update.status)
-        if not updated:
+    # 验证字段权限
+    if not is_sender:
+        # 接收者只能更新状态
+        if report_update.title is not None or report_update.content is not None:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to update report"
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only sender can update title and content"
             )
     
-    # TODO: 支持更新标题和内容
+    # 更新汇报
+    updated = update_report(db, report_id, report_update)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to update report"
+        )
     
     return {"message": "Report updated"}
 
@@ -510,14 +552,50 @@ async def update_goal_progress_api(
 @app.websocket("/api/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket端点（转发到现有WebSocket服务器）"""
-    # TODO: 与现有WebSocket服务器集成
     await websocket.accept()
+    
+    # 现有WebSocket服务器地址
+    ws_url = f"ws://{settings.ws_host}:{settings.ws_port}"
+    
     try:
-        while True:
-            data = await websocket.receive_text()
-            await websocket.send_text(f"Message received: {data}")
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected")
+        # 连接到现有WebSocket服务器
+        import websockets
+        async with websockets.connect(ws_url) as remote_ws:
+            logger.info(f"WebSocket代理已连接: {ws_url}")
+            
+            # 创建双向转发任务
+            async def forward_to_remote():
+                try:
+                    while True:
+                        data = await websocket.receive_text()
+                        await remote_ws.send(data)
+                except Exception as e:
+                    logger.info(f"客户端连接关闭: {e}")
+                    return
+            
+            async def forward_to_client():
+                try:
+                    while True:
+                        data = await remote_ws.recv()
+                        await websocket.send_text(data)
+                except Exception as e:
+                    logger.info(f"远程服务器连接关闭: {e}")
+                    return
+            
+            # 运行两个转发任务
+            import asyncio
+            await asyncio.gather(
+                forward_to_remote(),
+                forward_to_client(),
+                return_exceptions=True
+            )
+            
+    except Exception as e:
+        logger.error(f"WebSocket代理失败: {e}")
+        await websocket.send_text(f"Error connecting to WebSocket server: {str(e)}")
+        await websocket.send_text(f"Please connect directly to: {ws_url}")
+    finally:
+        logger.info("WebSocket代理连接关闭")
 
 if __name__ == "__main__":
     import uvicorn

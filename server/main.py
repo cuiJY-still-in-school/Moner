@@ -14,6 +14,7 @@ from auth.crud import create_user, get_user_by_username
 from auth.schemas import UserCreate, UserType, LoginRequest, RegisterRequest
 from tools.manager import tool_manager
 from models.relationship import Relationship, RelationshipStatus
+from models.tool_execution import ToolExecution
 from relationships.crud import create_relationship, get_pending_requests_to_user, update_relationship_status
 from relationships.schemas import RelationshipCreate
 from goals.crud import create_goal, get_goals_by_user
@@ -215,6 +216,7 @@ async def handle_auth_token(db: Session, websocket: WebSocketServerProtocol, con
 
 async def handle_tool_request(db: Session, websocket: WebSocketServerProtocol, user_id: int, data: dict):
     """处理工具请求"""
+    import time
     tool_name = data.get("tool")
     params = data.get("params", {})
     
@@ -225,12 +227,41 @@ async def handle_tool_request(db: Session, websocket: WebSocketServerProtocol, u
         return
     
     # 执行工具
+    start_time = time.time()
     result = await tool_manager.execute_tool(tool_name, **params)
+    duration_ms = int((time.time() - start_time) * 1000)
     
     logger.info(f"工具执行结果: success={result.success}, error={result.error}")
     
-    # 记录工具执行（简化）
-    # TODO: 保存到数据库
+    # 保存工具执行记录到数据库
+    try:
+        # 构建命令字符串
+        command_str = str(params)
+        # 对于特定工具，提取关键信息
+        if tool_name == "bash" and "command" in params:
+            command_str = params["command"]
+        elif tool_name == "read" and "file_path" in params:
+            command_str = f"read: {params['file_path']}"
+        elif tool_name == "webfetch" and "url" in params:
+            command_str = f"fetch: {params['url']}"
+        elif tool_name == "edit" and "file_path" in params:
+            command_str = f"edit: {params['file_path']}"
+        
+        # 创建工具执行记录
+        tool_exec = ToolExecution(
+            user_id=user_id,
+            tool_name=tool_name,
+            command=command_str,
+            output=str(result.output) if result.output else None,
+            exit_code=0 if result.success else 1,
+            duration_ms=duration_ms
+        )
+        db.add(tool_exec)
+        db.commit()
+        logger.info(f"工具执行记录已保存: id={tool_exec.id}")
+    except Exception as db_error:
+        logger.error(f"保存工具执行记录失败: {db_error}", exc_info=True)
+        # 不中断主要流程，仅记录错误
     
     await send_message(websocket, MessageType.TOOL_RESPONSE, {
         "tool": tool_name,
@@ -242,8 +273,54 @@ async def handle_tool_request(db: Session, websocket: WebSocketServerProtocol, u
 
 async def handle_report(db: Session, websocket: WebSocketServerProtocol, user_id: int, data: dict):
     """处理汇报"""
-    # TODO: 实现汇报逻辑
-    await send_message(websocket, MessageType.INFO, {"message": "报告功能待实现"})
+    to_user_id = data.get("to_user_id")
+    title = data.get("title")
+    content = data.get("content")
+    
+    if not to_user_id or not title or not content:
+        await send_error(websocket, "缺少必要参数: to_user_id, title, content")
+        return
+    
+    try:
+        # 导入相关函数
+        from relationships.crud import create_report
+        from relationships.schemas import ReportCreate
+        
+        # 创建汇报
+        report_data = ReportCreate(
+            to_user_id=to_user_id,
+            title=title,
+            content=content
+        )
+        
+        report = create_report(db, user_id, report_data)
+        if not report:
+            await send_error(websocket, "创建汇报失败")
+            return
+        
+        logger.info(f"汇报已创建: id={report.id}, from={user_id}, to={to_user_id}")
+        
+        # 发送成功响应
+        await send_message(websocket, MessageType.INFO, {
+            "message": "汇报已发送",
+            "report_id": report.id
+        })
+        
+        # 通知接收用户（如果在线）
+        from server.connection_manager import connection_manager
+        receiver_ws = connection_manager.get_user_connection(to_user_id)
+        if receiver_ws:
+            await send_message(receiver_ws, MessageType.REPORT, {
+                "message": "您收到新的汇报",
+                "report_id": report.id,
+                "from_user_id": user_id,
+                "title": title,
+                "content": content[:100] + "..." if len(content) > 100 else content
+            })
+            
+    except Exception as e:
+        logger.error(f"处理汇报失败: {e}", exc_info=True)
+        await send_error(websocket, f"处理汇报失败: {str(e)}")
 
 async def handle_relationship_request(db: Session, websocket: WebSocketServerProtocol, user_id: int, data: dict):
     """处理关系请求"""
@@ -336,8 +413,63 @@ async def handle_goal_create(db: Session, websocket: WebSocketServerProtocol, us
 
 async def handle_goal_update(db: Session, websocket: WebSocketServerProtocol, user_id: int, data: dict):
     """处理目标更新"""
-    # TODO: 实现目标更新
-    await send_message(websocket, MessageType.INFO, {"message": "目标更新功能待实现"})
+    goal_id = data.get("goal_id")
+    progress = data.get("progress")
+    status = data.get("status")
+    title = data.get("title")
+    description = data.get("description")
+    
+    if not goal_id:
+        await send_error(websocket, "缺少目标ID")
+        return
+    
+    # 至少提供一个更新字段
+    if progress is None and status is None and title is None and description is None:
+        await send_error(websocket, "至少提供一个更新字段: progress, status, title, description")
+        return
+    
+    try:
+        from goals.crud import get_goal, update_goal, update_goal_progress
+        from goals.schemas import GoalUpdate
+        
+        # 检查目标是否存在且属于用户
+        goal = get_goal(db, goal_id)
+        if not goal:
+            await send_error(websocket, "目标不存在")
+            return
+        
+        if goal.user_id != user_id:
+            await send_error(websocket, "无权更新此目标")
+            return
+        
+        # 更新目标
+        if progress is not None:
+            # 更新进度
+            updated = update_goal_progress(db, goal_id, progress)
+            if not updated:
+                await send_error(websocket, "更新进度失败")
+                return
+        else:
+            # 更新其他字段
+            goal_update = GoalUpdate(
+                title=title,
+                description=description,
+                status=status
+            )
+            updated = update_goal(db, goal_id, goal_update)
+            if not updated:
+                await send_error(websocket, "更新目标失败")
+                return
+        
+        logger.info(f"目标已更新: id={goal_id}, user={user_id}")
+        await send_message(websocket, MessageType.GOAL_UPDATE, {
+            "message": "目标已更新",
+            "goal_id": goal_id
+        })
+        
+    except Exception as e:
+        logger.error(f"更新目标失败: {e}", exc_info=True)
+        await send_error(websocket, f"更新目标失败: {str(e)}")
 
 async def send_message(websocket: WebSocketServerProtocol, msg_type: str, data: dict):
     """发送消息给客户端"""

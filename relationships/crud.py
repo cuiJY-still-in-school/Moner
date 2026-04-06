@@ -111,6 +111,23 @@ def update_report_status(db: Session, report_id: int, status: str) -> Optional[R
     db.refresh(db_report)
     return db_report
 
+def update_report(db: Session, report_id: int, report_update: ReportUpdate) -> Optional[Report]:
+    db_report = db.query(Report).filter(Report.id == report_id).first()
+    if not db_report:
+        return None
+    
+    # 更新字段
+    if report_update.title is not None:
+        db_report.title = report_update.title
+    if report_update.content is not None:
+        db_report.content = report_update.content
+    if report_update.status is not None:
+        db_report.status = report_update.status
+    
+    db.commit()
+    db.refresh(db_report)
+    return db_report
+
 def delete_report(db: Session, report_id: int) -> bool:
     db_report = db.query(Report).filter(Report.id == report_id).first()
     if not db_report:
