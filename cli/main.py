@@ -11,6 +11,16 @@ logger = logging.getLogger(__name__)
 
 app = typer.Typer()
 
+# 版本信息
+VERSION = "1.0.0"
+
+@app.command()
+def version():
+    """显示Moner版本"""
+    typer.echo(f"Moner v{VERSION}")
+    typer.echo("CLI非冷启动AI系统")
+    typer.echo("支持动态AI调用、WebSocket通信和工具执行")
+
 # 配置
 WS_URL = "ws://localhost:8765"
 current_token = None
@@ -325,6 +335,24 @@ def ai(
             typer.echo(f"错误: {data.get('error', '未知错误')}")
     else:
         typer.echo("执行失败")
+
+# 添加--version选项支持
+def version_callback(value: bool):
+    if value:
+        typer.echo(f"Moner v{VERSION}")
+        raise typer.Exit()
+
+@app.callback()
+def main(
+    version: bool = typer.Option(None, "--version", callback=version_callback, 
+                                 is_eager=True, help="显示版本信息")
+):
+    """
+    Moner - CLI非冷启动AI系统
+    
+    支持动态AI调用、WebSocket通信和工具执行
+    """
+    pass
 
 if __name__ == "__main__":
     app()

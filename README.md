@@ -54,6 +54,16 @@ curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/inst
 curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- /path/to/install
 ```
 
+**高级选项**：
+
+```bash
+# 跳过sudo步骤（无sudo权限时使用）
+curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- --no-sudo
+
+# 跳过系统依赖检查（已安装依赖时使用）
+curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- --skip-deps
+```
+
 > **注意**：`-S` 参数显示错误，`-L` 参数跟随重定向。如果安装失败，请去掉 `-s` 参数以查看详细输出。
 
 安装完成后，可以直接使用 `moner` 命令：
@@ -99,27 +109,72 @@ pip install -r requirements.txt
 ### 安装问题
 
 #### 1. `moner` 命令未找到
-安装脚本会尝试将 `moner` 命令安装到 `/usr/local/bin` 或 `~/.local/bin`。如果命令未找到，请检查：
+这是最常见的安装问题。安装脚本会尝试将 `moner` 命令安装到 `/usr/local/bin` 或 `~/.local/bin`。如果命令未找到，请按以下步骤解决：
 
-- `~/.local/bin` 是否在你的 `PATH` 环境变量中
-  ```bash
-  echo $PATH | grep ~/.local/bin
-  ```
-  如果不在，请将其添加到 `PATH`：
-  ```bash
-  # 对于 bash
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-  source ~/.bashrc
-  
-  # 对于 zsh
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-  source ~/.zshrc
-  ```
+**步骤1：检查安装位置**
+```bash
+# 检查 ~/.local/bin 是否有 moner
+ls -la ~/.local/bin/moner 2>/dev/null || echo "~/.local/bin/moner 不存在"
 
-- 或者手动创建符号链接：
-  ```bash
-  sudo ln -s ~/.moner/moner-launcher.sh /usr/local/bin/moner
-  ```
+# 检查 /usr/local/bin 是否有 moner
+ls -la /usr/local/bin/moner 2>/dev/null || echo "/usr/local/bin/moner 不存在"
+
+# 检查安装目录
+ls -la ~/.moner/moner-launcher.sh 2>/dev/null || echo "安装目录下的启动脚本不存在"
+```
+
+**步骤2：检查 PATH 环境变量**
+```bash
+echo $PATH | grep -E "(\.local/bin|/usr/local/bin)"
+```
+如果 `~/.local/bin` 不在 PATH 中，请添加：
+
+```bash
+# 对于 bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# 对于 zsh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
+# 对于 fish
+echo 'set -gx PATH $HOME/.local/bin $PATH' >> ~/.config/fish/config.fish
+source ~/.config/fish/config.fish
+```
+
+**步骤3：手动创建符号链接**
+如果上述方法无效，可以手动创建符号链接：
+
+```bash
+# 创建 ~/.local/bin 目录（如果不存在）
+mkdir -p ~/.local/bin
+
+# 创建符号链接
+ln -sf ~/.moner/moner-launcher.sh ~/.local/bin/moner
+
+# 添加权限
+chmod +x ~/.moner/moner-launcher.sh
+
+# 临时添加到当前会话的PATH
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+**步骤4：验证安装**
+运行以下命令验证安装：
+```bash
+# 检查moner命令是否可用
+which moner || echo "moner命令未找到，请尝试重新打开终端"
+
+# 如果moner命令不可用，直接使用启动脚本
+~/.moner/moner-launcher.sh --version
+```
+
+**步骤5：如果仍然有问题**
+尝试使用 `--no-sudo` 选项重新安装：
+```bash
+curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- --no-sudo
+```
 
 #### 2. 安装脚本无输出
 如果使用 `curl -sSL` 安装时没有输出，请去掉 `-s` 参数查看详细输出：

@@ -3,7 +3,7 @@
 # Moner 一键安装脚本
 # 使用: curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
 
-set -e  # 出错时停止
+set -euo pipefail  # 严格模式：出错时停止，未定义变量报错，管道中任一命令失败则整个管道失败
 
 # 显示帮助信息
 show_help() {
@@ -12,10 +12,15 @@ Moner 一键安装脚本
 
 使用方法:
   curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
-  curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- [安装目录]
+  curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- [选项] [安装目录]
+
+选项:
+  -h, --help     显示此帮助信息
+  --no-sudo      跳过需要sudo权限的步骤（系统包安装）
+  --skip-deps    跳过系统依赖检查
 
 参数:
-  安装目录    可选，默认为 ~/.moner
+  安装目录       可选，默认为 ~/.moner
 
 示例:
   # 使用默认安装目录
@@ -23,6 +28,9 @@ Moner 一键安装脚本
   
   # 指定安装目录
   curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- /opt/moner
+  
+  # 跳过sudo步骤（无权限时）
+  curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash -s -- --no-sudo
   
   # 本地运行（已下载脚本）
   ./install.sh ~/my-moner
@@ -40,9 +48,39 @@ EOF
     exit 0
 }
 
-# 检查是否请求帮助
-if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    show_help
+# 解析命令行参数
+NO_SUDO=false
+SKIP_DEPS=false
+INSTALL_DIR=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_help
+            ;;
+        --no-sudo)
+            NO_SUDO=true
+            shift
+            ;;
+        --skip-deps)
+            SKIP_DEPS=true
+            shift
+            ;;
+        *)
+            if [[ "$1" == -* ]]; then
+                log_error "未知选项: $1"
+                show_help
+            else
+                INSTALL_DIR="$1"
+                shift
+            fi
+            ;;
+    esac
+done
+
+# 设置默认安装目录（如果未指定）
+if [ -z "$INSTALL_DIR" ]; then
+    INSTALL_DIR="$HOME/.moner"
 fi
 
 # 颜色定义
@@ -112,15 +150,33 @@ check_python_version() {
 install_system_deps() {
     log_info "安装系统依赖..."
     
+    if [ "$NO_SUDO" = true ]; then
+        log_warning "跳过系统包安装（--no-sudo模式）"
+        log_warning "请手动安装以下依赖:"
+        echo "  - Python 3.8+"
+        echo "  - pip"
+        echo "  - git"
+        echo "  - curl"
+        echo ""
+        echo "安装方法参考:"
+        echo "  Debian/Ubuntu: apt-get install python3 python3-pip python3-venv git curl"
+        echo "  RHEL/CentOS: yum install python3 python3-pip python3-virtualenv git curl"
+        echo "  macOS: brew install python git curl"
+        return 0
+    fi
+    
     if [ -f /etc/debian_version ]; then
         # Debian/Ubuntu
+        log_info "检测到Debian/Ubuntu系统"
         sudo apt-get update
         sudo apt-get install -y python3 python3-pip python3-venv git curl
     elif [ -f /etc/redhat-release ] || [ -f /etc/centos-release ]; then
         # RHEL/CentOS
+        log_info "检测到RHEL/CentOS系统"
         sudo yum install -y python3 python3-pip python3-virtualenv git curl
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
+        log_info "检测到macOS系统"
         if ! command -v brew &> /dev/null; then
             log_error "请先安装Homebrew: https://brew.sh/"
             return 1
@@ -211,11 +267,19 @@ create_launcher() {
     log_info "创建启动脚本..."
     
     # 创建启动脚本内容
+    # 使用反斜杠转义heredoc中的$符号，但允许$install_dir扩展
     cat > "$install_dir/moner-launcher.sh" << EOF
 #!/bin/bash
 # Moner启动脚本
 
-MONER_DIR="$install_dir"
+# 获取脚本所在目录（处理符号链接）
+if [ -L "\$0" ]; then
+    # 如果是符号链接，获取链接目标
+    SCRIPT_FILE="\$(readlink -f "\$0")"
+else
+    SCRIPT_FILE="\$0"
+fi
+MONER_DIR="\$(cd "\$(dirname "\$SCRIPT_FILE")" && pwd)"
 
 # 检查是否在虚拟环境中
 if [ -z "\$VIRTUAL_ENV" ]; then
@@ -260,10 +324,9 @@ install_link() {
     local source_file="$1"
     local command_name="$2"
     
-    if [ -w "/usr/local/bin" ]; then
-        ln -sf "$source_file" "/usr/local/bin/$command_name"
-        log_success "$command_name命令已安装到 /usr/local/bin/$command_name"
-    elif mkdir -p "$HOME/.local/bin" 2>/dev/null && [ -w "$HOME/.local/bin" ]; then
+    # 首先尝试 ~/.local/bin（用户目录，不需要sudo）
+    mkdir -p "$HOME/.local/bin" 2>/dev/null
+    if [ -w "$HOME/.local/bin" ]; then
         ln -sf "$source_file" "$HOME/.local/bin/$command_name"
         log_success "$command_name命令已安装到 ~/.local/bin/$command_name"
         
@@ -271,26 +334,62 @@ install_link() {
         if ! is_in_path "$HOME/.local/bin"; then
             log_warning "~/.local/bin 不在你的PATH中"
             local shell_type=$(detect_shell)
+            local shell_rc=""
             case "$shell_type" in
                 bash)
-                    echo "  请将以下行添加到 ~/.bashrc 文件中:"
-                    echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-                    echo "  然后运行: source ~/.bashrc"
+                    shell_rc="~/.bashrc"
                     ;;
                 zsh)
-                    echo "  请将以下行添加到 ~/.zshrc 文件中:"
-                    echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-                    echo "  然后运行: source ~/.zshrc"
+                    shell_rc="~/.zshrc"
+                    ;;
+                fish)
+                    shell_rc="~/.config/fish/config.fish"
                     ;;
                 *)
-                    echo "  请将 ~/.local/bin 添加到你的PATH环境变量中"
+                    shell_rc="你的shell配置文件"
                     ;;
             esac
+            
+            echo "  请将以下行添加到 $shell_rc 文件中:"
+            echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+            echo "  然后运行以下命令使其生效:"
+            case "$shell_type" in
+                bash)
+                    echo "    source ~/.bashrc"
+                    ;;
+                zsh)
+                    echo "    source ~/.zshrc"
+                    ;;
+                fish)
+                    echo "    source ~/.config/fish/config.fish"
+                    ;;
+                *)
+                    echo "    重新启动终端或重新加载shell配置"
+                    ;;
+            esac
+            echo ""
+            echo "  或者临时添加到当前会话:"
+            echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+            
+            # 直接尝试添加到当前shell的PATH
+            if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+                export PATH="$HOME/.local/bin:$PATH"
+                log_info "已将 ~/.local/bin 添加到当前会话的PATH"
+            fi
         fi
+    elif [ -w "/usr/local/bin" ]; then
+        # 备选方案：/usr/local/bin（需要sudo权限）
+        ln -sf "$source_file" "/usr/local/bin/$command_name"
+        log_success "$command_name命令已安装到 /usr/local/bin/$command_name"
     else
         log_warning "无法自动安装$command_name命令，请手动创建:"
-        echo "  ln -s $source_file /usr/local/bin/$command_name"
-        echo "或运行: $source_file"
+        echo "  # 创建符号链接到 ~/.local/bin（推荐）:"
+        echo "  mkdir -p ~/.local/bin"
+        echo "  ln -s $source_file ~/.local/bin/$command_name"
+        echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+        echo ""
+        echo "  # 或者使用完整路径运行:"
+        echo "  $source_file"
     fi
 }
 
@@ -331,18 +430,85 @@ verify_installation() {
     
     log_info "验证安装..."
     
-    # 检查moner命令是否在PATH中可用
-    if command -v moner &> /dev/null; then
-        log_success "moner命令在PATH中可用"
+    echo ""
+    echo -e "${YELLOW}=== 安装验证 ===${NC}"
+    
+    # 检查安装目录是否存在
+    if [ -d "$install_dir" ]; then
+        log_success "安装目录存在: $install_dir"
     else
-        log_warning "moner命令未在PATH中找到"
-        echo "  你可以使用以下方式运行Moner:"
-        echo "    1. 直接运行: $install_dir/moner-launcher.sh"
-        echo "    2. 手动创建符号链接:"
-        echo "       sudo ln -s $install_dir/moner-launcher.sh /usr/local/bin/moner"
-        echo "    3. 将安装目录添加到PATH:"
-        echo "       export PATH=\"\$PATH:$install_dir\""
-        echo "      然后运行: moner-launcher.sh"
+        log_error "安装目录不存在: $install_dir"
+        return 1
+    fi
+    
+    # 检查启动脚本是否存在
+    if [ -f "$install_dir/moner-launcher.sh" ]; then
+        log_success "启动脚本存在: $install_dir/moner-launcher.sh"
+        chmod +x "$install_dir/moner-launcher.sh" 2>/dev/null
+    else
+        log_error "启动脚本不存在: $install_dir/moner-launcher.sh"
+        return 1
+    fi
+    
+    # 检查虚拟环境是否存在
+    if [ -d "$install_dir/venv" ]; then
+        log_success "Python虚拟环境存在"
+    else
+        log_error "Python虚拟环境不存在"
+        return 1
+    fi
+    
+    # 检查moner命令是否在PATH中可用
+    local moner_found=false
+    local moner_path=""
+    
+    # 首先检查命令是否在PATH中
+    if command -v moner &> /dev/null; then
+        moner_found=true
+        moner_path=$(command -v moner)
+        log_success "moner命令在PATH中可用: $moner_path"
+    else
+        # 检查常见位置
+        local possible_paths=(
+            "$HOME/.local/bin/moner"
+            "/usr/local/bin/moner"
+            "/usr/bin/moner"
+            "$install_dir/moner-launcher.sh"
+        )
+        
+        for path in "${possible_paths[@]}"; do
+            if [ -f "$path" ] && [ -x "$path" ]; then
+                moner_found=true
+                moner_path="$path"
+                log_success "找到moner可执行文件: $path"
+                break
+            fi
+        done
+        
+        if [ "$moner_found" = false ]; then
+            log_warning "moner命令未找到"
+            echo ""
+            echo "  你可以使用以下方式运行Moner:"
+            echo "    1. 直接运行启动脚本:"
+            echo "       $install_dir/moner-launcher.sh --help"
+            echo ""
+            echo "    2. 手动创建符号链接:"
+            echo "       ln -s $install_dir/moner-launcher.sh ~/.local/bin/moner"
+            echo "       export PATH=\"\$HOME/.local/bin:\$PATH\""
+            echo ""
+            echo "    3. 或者将以下别名添加到你的shell配置:"
+            echo "       alias moner='$install_dir/moner-launcher.sh'"
+        fi
+    fi
+    
+    # 如果找到moner命令，测试基本功能
+    if [ "$moner_found" = true ] && [ -n "$moner_path" ]; then
+        log_info "测试moner命令基本功能..."
+        if "$moner_path" --help &>/dev/null; then
+            log_success "moner命令测试通过"
+        else
+            log_warning "moner命令测试失败，但文件存在"
+        fi
     fi
     
     # 检查moner-start命令是否在PATH中可用
@@ -353,6 +519,9 @@ verify_installation() {
         echo "  你可以使用以下方式启动Moner系统:"
         echo "    cd $install_dir && ./start_all.sh"
     fi
+    
+    echo -e "${YELLOW}================${NC}"
+    echo ""
 }
 
 # 显示安装完成信息
@@ -378,10 +547,18 @@ show_completion() {
     fi
     echo ""
     echo "2. 使用CLI命令:"
-    if [ -f "/usr/local/bin/moner" ] || [ -f "$HOME/.local/bin/moner" ]; then
+    # 检查moner命令是否可用
+    if command -v moner &>/dev/null || [ -f "$HOME/.local/bin/moner" ] || [ -f "/usr/local/bin/moner" ]; then
         echo "   moner --help"
+        echo ""
+        echo "   快速测试（如果moner命令可用）:"
+        echo "     moner --version"
+        echo "     moner --help"
     else
         echo "   $install_dir/moner-launcher.sh --help"
+        echo ""
+        echo "   快速测试:"
+        echo "     $install_dir/moner-launcher.sh --help"
     fi
     echo ""
     echo "3. 注册用户:"
@@ -396,7 +573,15 @@ show_completion() {
     echo "6. 配置说明:"
     echo "   编辑 $install_dir/.env 文件进行配置"
     echo ""
-    echo -e "${YELLOW}注意事项:${NC}"
+    echo -e "${YELLOW}重要提示:${NC}"
+    if ! command -v moner &>/dev/null; then
+        echo -e "${YELLOW}- moner命令可能不在PATH中${NC}"
+        echo "  如果'moner'命令未找到，请尝试:"
+        echo "    1. 重新打开终端"
+        echo "    2. 运行: source ~/.bashrc 或 source ~/.zshrc"
+        echo "    3. 或者直接使用: $install_dir/moner-launcher.sh"
+        echo ""
+    fi
     echo "- 首次启动会初始化数据库"
     echo "- 需要有效的AI API密钥才能使用AI功能"
     echo "- 生产环境请修改 .env 中的默认配置"
@@ -410,38 +595,57 @@ main() {
     log_info "开始安装 Moner..."
     echo ""
     
-    # 默认安装目录
-    local install_dir="$HOME/.moner"
+    # 使用解析后的安装目录
+    local install_dir="$INSTALL_DIR"
     
-    # 检查是否需要自定义安装目录
-    if [ $# -ge 1 ]; then
-        install_dir="$1"
-    fi
+    log_info "安装目录: $install_dir"
+    log_info "跳过sudo步骤: $NO_SUDO"
+    log_info "跳过依赖检查: $SKIP_DEPS"
+    echo ""
     
     # 检查系统依赖
-    log_info "检查系统依赖..."
-    check_python_version || {
-        log_warning "Python版本检查失败，尝试安装依赖..."
-        install_system_deps
+    if [ "$SKIP_DEPS" = false ]; then
+        log_info "检查系统依赖..."
         check_python_version || {
-            log_error "Python安装失败，请手动安装Python 3.8+"
-            exit 1
+            if [ "$NO_SUDO" = false ]; then
+                log_warning "Python版本检查失败，尝试安装依赖..."
+                install_system_deps
+                check_python_version || {
+                    log_error "Python安装失败，请手动安装Python 3.8+"
+                    exit 1
+                }
+            else
+                log_error "需要Python 3.8或更高版本，请手动安装"
+                exit 1
+            fi
         }
-    }
-    
-    check_command "git" || {
-        log_warning "git未安装，尝试安装..."
-        install_system_deps
+        
         check_command "git" || {
-            log_error "git安装失败，请手动安装git"
-            exit 1
+            if [ "$NO_SUDO" = false ]; then
+                log_warning "git未安装，尝试安装..."
+                install_system_deps
+                check_command "git" || {
+                    log_error "git安装失败，请手动安装git"
+                    exit 1
+                }
+            else
+                log_error "需要git，请手动安装"
+                exit 1
+            fi
         }
-    }
-    
-    check_command "curl" || {
-        log_warning "curl未安装，尝试安装..."
-        install_system_deps
-    }
+        
+        check_command "curl" || {
+            if [ "$NO_SUDO" = false ]; then
+                log_warning "curl未安装，尝试安装..."
+                install_system_deps
+            else
+                log_error "需要curl，请手动安装"
+                exit 1
+            fi
+        }
+    else
+        log_warning "跳过系统依赖检查，请确保已安装: python3, pip, git, curl"
+    fi
     
     # 下载Moner
     download_moner "$install_dir"
