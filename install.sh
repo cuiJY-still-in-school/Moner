@@ -284,24 +284,28 @@ setup_venv() {
         
         # 对于Python 3.13，需要特殊处理pydantic-core
         if [[ "$python_version" == "3.13" ]]; then
-            log_warning "Python 3.13检测到，为pydantic-core使用--no-binary选项..."
-            # 创建临时requirements文件
+            log_warning "Python 3.13检测到，需要pydantic>=2.6.0以解决兼容性问题..."
+            # 创建临时requirements文件，将pydantic==2.5.0替换为pydantic>=2.6.0
             local tmp_req_file=$(mktemp)
-            cp requirements.txt "$tmp_req_file"
+            # 复制并替换pydantic版本
+            sed 's/pydantic==2.5.0/pydantic>=2.6.0/' requirements.txt > "$tmp_req_file"
             
-            # 使用--no-binary pydantic-core选项
-            if pip install --no-index --find-links "$deps_dir" --no-binary pydantic-core -r "$tmp_req_file"; then
-                log_success "使用预打包依赖和--no-binary pydantic-core安装成功"
+            log_info "修改后的requirements文件内容:"
+            grep pydantic "$tmp_req_file"
+            
+            # 使用--find-links优先使用本地包，允许回退到PyPI（不使用--no-index）
+            if pip install --find-links "$deps_dir" -r "$tmp_req_file"; then
+                log_success "使用预打包依赖和pydantic>=2.6.0安装成功"
                 rm -f "$tmp_req_file"
                 deactivate
                 return 0
             else
-                log_warning "本地依赖包安装失败，尝试在线安装..."
+                log_warning "使用pydantic>=2.6.0安装失败，尝试其他方法..."
                 rm -f "$tmp_req_file"
             fi
         else
             # 正常安装（非Python 3.13）
-            if pip install --no-index --find-links "$deps_dir" -r requirements.txt; then
+            if pip install --find-links "$deps_dir" -r requirements.txt; then
                 log_success "使用预打包依赖安装成功"
                 deactivate
                 return 0
