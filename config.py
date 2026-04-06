@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24小时
     
     # 工具安全限制
-    allowed_bash_paths: str = "/home/jayson2013/moner,/tmp"
+    allowed_bash_paths: Union[str, List[str]] = "/home/jayson2013/moner,/tmp"
     max_bash_timeout: int = 30
-    allowed_read_paths: str = "/home/jayson2013/moner"
-    allowed_edit_paths: str = "/home/jayson2013/moner"
+    allowed_read_paths: Union[str, List[str]] = "/home/jayson2013/moner"
+    allowed_edit_paths: Union[str, List[str]] = "/home/jayson2013/moner"
     
     # AI配置
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY", None)
@@ -38,7 +38,21 @@ class Settings(BaseSettings):
     app_name: str = "Moner"
     app_version: str = "0.1.0"
     
+    @field_validator("allowed_bash_paths", "allowed_read_paths", "allowed_edit_paths", mode="after")
+    @classmethod
+    def ensure_string(cls, v):
+        if isinstance(v, list):
+            return ",".join(v)
+        return v
+    
     class Config:
         env_file = ".env"
 
 settings = Settings()
+
+# 调试：打印字段类型
+if __name__ == "__main__":
+    print("Config loaded")
+    print("allowed_bash_paths annotation:", Settings.__annotations__.get('allowed_bash_paths'))
+    print("allowed_bash_paths value:", settings.allowed_bash_paths)
+    print("Type of value:", type(settings.allowed_bash_paths))
