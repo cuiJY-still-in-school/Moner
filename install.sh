@@ -271,14 +271,15 @@ setup_venv() {
     # 检查是否有预打包的依赖
     local deps_dir="deps/$platform_id"
     log_info "检查预打包依赖目录: $deps_dir"
-    
+
     # 获取Python版本（用于决定安装策略）
     local python_version_full=$(python3 -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" 2>/dev/null || echo "unknown")
     local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
     
     log_info "Python版本: $python_version_full ($python_version)"
     
-    if [ -d "$deps_dir" ] && [ -n "$(ls -A "$deps_dir"/*.whl "$deps_dir"/*.tar.gz "$deps_dir"/*.zip 2>/dev/null)" ]; then
+    # 检查依赖目录是否存在且包含包文件
+    if [ -d "$deps_dir" ] && [ -n "$(find "$deps_dir" -maxdepth 1 -name "*.whl" -o -name "*.tar.gz" -o -name "*.zip" 2>/dev/null | head -1)" ]; then
         log_success "找到预打包的依赖目录: $deps_dir"
         log_info "使用本地依赖包安装..."
         
