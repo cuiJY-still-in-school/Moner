@@ -10,7 +10,9 @@ class ReadTool(Tool):
     description = "读取文件内容"
     
     def __init__(self):
-        self.allowed_paths = [Path(p).resolve() for p in settings.allowed_read_paths]
+        # 分割逗号分隔的路径字符串
+        path_strs = settings.allowed_read_paths.split(",")
+        self.allowed_paths = [Path(p.strip()).resolve() for p in path_strs if p.strip()]
     
     def _is_path_allowed(self, file_path: str) -> bool:
         """检查文件路径是否在允许的目录内"""

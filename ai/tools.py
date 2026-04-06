@@ -48,10 +48,14 @@ class OpenAITool(AITool):
     
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         super().__init__()
-        self.api_key = api_key or settings.get("OPENAI_API_KEY", "")
-        self.base_url = base_url or settings.get("OPENAI_BASE_URL", None)
+        self.api_key = api_key or settings.openai_api_key or ""
+        self.base_url = base_url or settings.openai_base_url
         self.client = None
         self.async_client = None
+        
+        # 从配置获取默认模型
+        if settings.default_ai_model:
+            self.default_model = settings.default_ai_model
         
         if self.api_key:
             self._init_clients()
@@ -85,29 +89,60 @@ class OpenAITool(AITool):
             )
         
         try:
-            response = await self.async_client.completions.create(
-                model=model or self.default_model,
-                prompt=prompt,
-                max_tokens=max_tokens or self.default_max_tokens,
-                temperature=temperature or self.default_temperature,
-                **kwargs
-            )
+            model_name = model or self.default_model
             
-            completion = response.choices[0].text
-            usage = response.usage
-            
-            metadata = {
-                "model": response.model,
-                "tokens_used": usage.total_tokens if usage else 0,
-                "finish_reason": response.choices[0].finish_reason
-            }
-            
-            return ToolResult(
-                success=True,
-                output=completion,
-                error=None,
-                metadata=metadata
-            )
+            # 检查是否是DeepSeek模型，如果是则使用chat completions
+            if "deepseek" in model_name.lower():
+                # 对于DeepSeek，使用chat completions而不是completions
+                messages = [{"role": "user", "content": prompt}]
+                response = await self.async_client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    max_tokens=max_tokens or self.default_max_tokens,
+                    temperature=temperature or self.default_temperature,
+                    **kwargs
+                )
+                
+                completion = response.choices[0].message.content
+                usage = response.usage
+                
+                metadata = {
+                    "model": response.model,
+                    "tokens_used": usage.total_tokens if usage else 0,
+                    "finish_reason": response.choices[0].finish_reason
+                }
+                
+                return ToolResult(
+                    success=True,
+                    output=completion,
+                    error=None,
+                    metadata=metadata
+                )
+            else:
+                # 对于其他模型，使用传统的completions
+                response = await self.async_client.completions.create(
+                    model=model_name,
+                    prompt=prompt,
+                    max_tokens=max_tokens or self.default_max_tokens,
+                    temperature=temperature or self.default_temperature,
+                    **kwargs
+                )
+                
+                completion = response.choices[0].text
+                usage = response.usage
+                
+                metadata = {
+                    "model": response.model,
+                    "tokens_used": usage.total_tokens if usage else 0,
+                    "finish_reason": response.choices[0].finish_reason
+                }
+                
+                return ToolResult(
+                    success=True,
+                    output=completion,
+                    error=None,
+                    metadata=metadata
+                )
             
         except Exception as e:
             return ToolResult(
@@ -184,8 +219,13 @@ class AnthropicTool(AITool):
     
     def __init__(self, api_key: Optional[str] = None):
         super().__init__()
-        self.api_key = api_key or settings.get("ANTHROPIC_API_KEY", "")
+        self.api_key = api_key or settings.anthropic_api_key or ""
         self.client = None
+        
+        # 从配置获取默认模型（如果适用）
+        # Anthropic默认模型可能不同，但我们可以从配置获取
+        if settings.default_ai_model and "claude" in settings.default_ai_model.lower():
+            self.default_model = settings.default_ai_model
         
         if self.api_key:
             self.client = anthropic.Anthropic(api_key=self.api_key)

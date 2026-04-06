@@ -13,7 +13,9 @@ class BashTool(Tool):
     description = "执行bash命令，有安全限制"
     
     def __init__(self):
-        self.allowed_paths = [Path(p).resolve() for p in settings.allowed_bash_paths]
+        # 分割逗号分隔的路径字符串
+        path_strs = settings.allowed_bash_paths.split(",")
+        self.allowed_paths = [Path(p.strip()).resolve() for p in path_strs if p.strip()]
         self.max_timeout = settings.max_bash_timeout
     
     def _is_path_allowed(self, path: Optional[str] = None) -> bool:

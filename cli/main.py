@@ -484,8 +484,8 @@ def logout():
 def ai(
     prompt: str = typer.Argument(..., help="AI提示词"),
     provider: str = typer.Option("openai", help="AI提供商: openai, anthropic"),
-    api_key: Optional[str] = typer.Option(None, prompt=True, hide_input=True, help="API密钥（如未配置）"),
-    model_name: str = typer.Option("gpt-3.5-turbo", help="模型名称"),
+    api_key: Optional[str] = typer.Option(None, help="API密钥（如未在.env中配置）"),
+    model_name: Optional[str] = typer.Option(None, help="模型名称（默认从配置获取）"),
     base_url: Optional[str] = typer.Option(None, help="API基础URL（如使用本地部署）"),
     max_tokens: int = typer.Option(1000, help="最大生成token数"),
     temperature: float = typer.Option(0.7, help="温度参数（0.0-2.0）"),
@@ -508,6 +508,10 @@ def ai(
         typer.echo(f"错误：未提供{provider} API密钥且未在配置中找到")
         typer.echo("请通过--api-key参数提供或在.env文件中设置")
         raise typer.Exit(code=1)
+    
+    # 设置默认模型名称（如果未提供）
+    if model_name is None:
+        model_name = settings.default_ai_model or ("gpt-3.5-turbo" if provider == "openai" else "claude-2")
     
     if mode == "complete":
         # 使用补全模式
