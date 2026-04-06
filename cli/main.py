@@ -11,7 +11,7 @@ import requests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = typer.Typer()
+app = typer.Typer(name="moner")
 
 # 版本信息
 VERSION = "1.0.0"
