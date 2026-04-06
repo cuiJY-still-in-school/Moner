@@ -3,7 +3,7 @@
 # Moner 一键安装脚本
 # 使用: curl -sSL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/install.sh | bash
 
-set -euo pipefail  # 严格模式：出错时停止，未定义变量报错，管道中任一命令失败则整个管道失败
+set -eo pipefail  # 严格模式：出错时停止，管道中任一命令失败则整个管道失败
 
 # 显示帮助信息
 show_help() {
@@ -666,7 +666,5 @@ main() {
     show_completion "$install_dir"
 }
 
-# 如果是直接运行，而不是被source
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi
+# 直接运行主函数
+main "$@"
