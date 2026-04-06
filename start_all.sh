@@ -53,12 +53,12 @@ if [[ "$python_version" == "3.13" ]]; then
     if [[ $need_update -eq 1 ]]; then
         echo "创建兼容性requirements文件..."
         cat > requirements_py313_fix.txt << EOF
-fastapi==0.104.1
+fastapi>=0.115.0
 uvicorn[standard]==0.24.0
 websockets==12.0
 sqlalchemy>=2.0.26
 alembic==1.12.1
-pydantic>=2.6.0
+pydantic>=2.9.0
 pydantic-settings==2.1.0
 pyjwt[crypto]==2.8.0
 passlib[bcrypt]==1.7.4
@@ -72,6 +72,7 @@ aiosqlite==0.19.0
 openai>=1.0.0
 anthropic>=0.25.0
 tiktoken>=0.5.0
+python-multipart>=0.0.24
 EOF
         
         echo "更新Python包以兼容Python 3.13..."

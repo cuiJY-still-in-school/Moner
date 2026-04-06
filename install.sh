@@ -351,16 +351,16 @@ setup_venv() {
             return 0
         fi
         
-        # 方法3: 使用pydantic>=2.6.0
-        log_info "方法2失败，尝试方法3: 使用pydantic>=2.6.0和sqlalchemy>=2.0.26..."
+        # 方法3: 使用pydantic>=2.9.0和sqlalchemy>=2.0.26
+        log_info "方法2失败，尝试方法3: 使用pydantic>=2.9.0和sqlalchemy>=2.0.26..."
         local newer_requirements="requirements_py313.txt"
         cat > "$install_dir/$newer_requirements" << EOF
-fastapi==0.104.1
+fastapi>=0.115.0
 uvicorn[standard]==0.24.0
 websockets==12.0
 sqlalchemy>=2.0.26
 alembic==1.12.1
-pydantic>=2.6.0
+pydantic>=2.9.0
 pydantic-settings==2.1.0
 pyjwt[crypto]==2.8.0
 passlib[bcrypt]==1.7.4
@@ -374,6 +374,7 @@ aiosqlite==0.19.0
 openai>=1.0.0
 anthropic>=0.25.0
 tiktoken>=0.5.0
+python-multipart>=0.0.24
 EOF
         
         if pip install -r "$install_dir/$newer_requirements"; then
