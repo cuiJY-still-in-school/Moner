@@ -66,6 +66,6 @@ cursor.close()
 conn.close()
 
 print("\n现在可以通过CLI登录:")
-print("  python -m cli.main login --username jayson --password test123")
+print("  moner login --username jayson --password test123")
 print("\n添加好友:")
-print("  python -m cli.main add_friend <deepseek用户ID>")
+print("  moner add_friend <deepseek用户ID>")

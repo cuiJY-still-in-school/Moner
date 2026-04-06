@@ -24,7 +24,7 @@ def main():
     print("""
 使用CLI命令调用AI模型（需要先登录）：
     
-    python -m cli.main ai "解释一下人工智能" \\
+    moner ai "解释一下人工智能" \\
         --provider openai \\
         --api-key YOUR_OPENAI_API_KEY \\
         --model-name gpt-4 \\
@@ -33,7 +33,7 @@ def main():
     
 或使用聊天模式：
     
-    python -m cli.main ai "你好，请介绍一下你自己" \\
+    moner ai "你好，请介绍一下你自己" \\
         --provider openai \\
         --api-key YOUR_OPENAI_API_KEY \\
         --model-name gpt-3.5-turbo \\
@@ -42,7 +42,7 @@ def main():
     
 使用Anthropic Claude：
     
-    python -m cli.main ai "解释一下机器学习" \\
+    moner ai "解释一下机器学习" \\
         --provider anthropic \\
         --api-key YOUR_ANTHROPIC_API_KEY \\
         --model-name claude-3-opus-20240229 \\
@@ -130,12 +130,12 @@ def main():
    ./start_all.sh
    
 2. 注册/登录用户：
-   python -m cli.main register --username test --password test
-   python -m cli.main login --username test --password test
+   moner register --username test --password test
+   moner login --username test --password test
    
 3. 使用AI功能：
    # 方式A: 使用CLI
-   python -m cli.main ai "你的问题" --provider openai --api-key YOUR_KEY
+   moner ai "你的问题" --provider openai --api-key YOUR_KEY
    
    # 方式B: 使用API
    # 先获取访问令牌（登录后CLI会保存）

@@ -135,7 +135,7 @@ async def example():
     print("\n=== 示例完成 ===")
     print("\n提示:")
     print("- 查看完整API文档: http://localhost:8000/api/docs")
-    print("- 使用CLI客户端: python -m cli.main --help")
+    print("- 使用CLI客户端: moner --help")
     print("- 同时启动所有服务: ./start_all.sh")
 
 async def main():

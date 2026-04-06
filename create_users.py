@@ -65,9 +65,9 @@ try:
     print(f"  人类用户: {human_user.username} (ID: {human_user.id})")
     print(f"  DeepSeek代理用户: {deepseek_user.username} (ID: {deepseek_user.id})")
     print("\n现在可以通过CLI登录:")
-    print(f"  python -m cli.main login --username jayson --password test123")
+    print(f"  moner login --username jayson --password test123")
     print("\n添加好友:")
-    print(f"  python -m cli.main add_friend {deepseek_user.id}")
+    print(f"  moner add_friend {deepseek_user.id}")
     
 except Exception as e:
     print(f"错误: {e}")
