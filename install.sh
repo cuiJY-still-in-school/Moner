@@ -142,6 +142,10 @@ check_python_version() {
         return 1
     fi
     
+    if [ $major -eq 3 ] && [ $minor -eq 13 ]; then
+        log_warning "检测到Python 3.13: 某些包可能不完全兼容，我们会尝试特殊处理"
+    fi
+    
     log_success "Python $version 检测通过"
     return 0
 }
@@ -231,26 +235,92 @@ setup_venv() {
     
     # 安装依赖
     log_info "安装Python依赖..."
-    if ! pip install -r requirements.txt; then
-        log_error "依赖安装失败，这可能是因为:"
-        echo ""
-        echo "  1. 网络问题 - 请检查网络连接"
-        echo "  2. Python版本不兼容 - 需要 Python 3.8-3.12"
-        echo "  3. 缺少编译工具 - 可能需要安装 build-essential 或类似工具"
-        echo ""
-        echo "可以尝试以下解决方案:"
-        echo "  a) 使用 --skip-deps 跳过依赖安装，然后手动安装:"
-        echo "     cd $install_dir && source venv/bin/activate && pip install -r requirements.txt"
-        echo "  b) 升级 pip: pip install --upgrade pip setuptools wheel"
-        echo "  c) 安装系统编译工具:"
-        echo "     Debian/Ubuntu: sudo apt-get install build-essential python3-dev"
-        echo "     RHEL/CentOS: sudo yum install gcc python3-devel"
-        echo "     macOS: xcode-select --install"
-        echo ""
-        echo "如果特定包（如 pydantic-core）构建失败，可以尝试:"
-        echo "  pip install --no-binary pydantic-core pydantic-core"
-        echo ""
-        return 1
+    
+    # 获取Python版本
+    local python_version_full=$(python3 -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" 2>/dev/null || echo "unknown")
+    local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
+    
+    log_info "Python版本: $python_version_full ($python_version)"
+    
+    # 检查是否需要特殊处理pydantic-core
+    local install_cmd="pip install -r requirements.txt"
+    
+    if [[ "$python_version" == "3.13" ]]; then
+        log_warning "检测到Python 3.13，pydantic-core可能需要特殊处理..."
+        log_info "尝试使用pydantic-core的预编译wheel..."
+        
+        # 首先尝试正常安装
+        if pip install -r requirements.txt; then
+            log_success "依赖安装成功"
+        else
+            log_warning "标准安装失败，尝试使用--no-binary选项..."
+            # 创建临时requirements文件，为pydantic-core添加--no-binary选项
+            local tmp_req_file=$(mktemp)
+            cp requirements.txt "$tmp_req_file"
+            
+            # 尝试使用--no-binary选项
+            if pip install --no-binary pydantic-core -r "$tmp_req_file"; then
+                log_success "使用--no-binary pydantic-core安装成功"
+            else
+                log_warning "--no-binary安装失败，尝试安装pydantic 2.6.0+..."
+                # 尝试安装较新版本的pydantic
+                local newer_requirements="requirements_py313.txt"
+                cat > "$install_dir/$newer_requirements" << EOF
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+sqlalchemy==2.0.23
+alembic==1.12.1
+pydantic>=2.6.0
+pydantic-settings==2.1.0
+pyjwt[crypto]==2.8.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+click==8.1.7
+typer==0.9.0
+rich==13.7.0
+requests==2.31.0
+aiohttp==3.9.1
+aiosqlite==0.19.0
+openai>=1.0.0
+anthropic>=0.25.0
+tiktoken>=0.5.0
+EOF
+                if pip install -r "$install_dir/$newer_requirements"; then
+                    log_success "使用pydantic>=2.6.0安装成功"
+                else
+                    log_error "所有安装方法都失败了"
+                    rm -f "$tmp_req_file" "$install_dir/$newer_requirements" 2>/dev/null
+                    return 1
+                fi
+                rm -f "$tmp_req_file" "$install_dir/$newer_requirements" 2>/dev/null
+            fi
+            rm -f "$tmp_req_file" 2>/dev/null
+        fi
+    else
+        # Python 3.12或更低版本，正常安装
+        if ! pip install -r requirements.txt; then
+            log_error "依赖安装失败，这可能是因为:"
+            echo ""
+            echo "  1. 网络问题 - 请检查网络连接"
+            echo "  2. Python版本不兼容 - 需要 Python 3.8-3.12"
+            echo "  3. 缺少编译工具 - 可能需要安装 build-essential 或类似工具"
+            echo ""
+            echo "可以尝试以下解决方案:"
+            echo "  a) 使用 --skip-deps 跳过依赖安装，然后手动安装:"
+            echo "     cd $install_dir && source venv/bin/activate && pip install -r requirements.txt"
+            echo "  b) 升级 pip: pip install --upgrade pip setuptools wheel"
+            echo "  c) 安装系统编译工具:"
+            echo "     Debian/Ubuntu: sudo apt-get install build-essential python3-dev"
+            echo "     RHEL/CentOS: sudo yum install gcc python3-devel"
+            echo "     macOS: xcode-select --install"
+            echo ""
+            echo "如果特定包（如 pydantic-core）构建失败，可以尝试:"
+            echo "  pip install --no-binary pydantic-core pydantic-core"
+            echo ""
+            return 1
+        fi
+        log_success "依赖安装成功"
     fi
     
     deactivate
