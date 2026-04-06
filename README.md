@@ -66,6 +66,12 @@ curl -SL https://raw.githubusercontent.com/cuiJY-still-in-school/Moner/main/inst
 
 > **注意**：`-S` 参数显示错误，`-L` 参数跟随重定向。如果安装失败，请去掉 `-s` 参数以查看详细输出。
 
+> **Python 3.13兼容性**：系统已支持Python 3.13，但需要注意以下依赖版本要求：
+> - `pydantic` >= 2.6.0（原为2.5.0）
+> - `SQLAlchemy` >= 2.0.26（原为2.0.23）
+> 
+> 安装脚本会自动检测Python版本并应用相应的依赖版本。如果遇到兼容性问题，请确保系统中有编译工具（如`build-essential`, `python3-dev`）。
+
 安装完成后，可以直接使用 `moner` 命令：
 
 ```bash
